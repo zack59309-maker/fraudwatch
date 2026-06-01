@@ -1,1 +1,7 @@
-"""__init__ files for subpackages"""
+"""
+CLI 命令行入口。
+"""
+
+from .main import main
+
+__all__ = ["main"]

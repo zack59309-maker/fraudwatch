@@ -1,7 +1,24 @@
 [build-system]
 requires = ["setuptools>=61.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fraudwatch"
+version = "0.2.0"
+description = "A股财务舞弊检测工具 — Beneish M-Score + 辅助指标"
+readme = "README.md"
+requires-python = ">=3.10"
+
+[[project.authors]]
+name = "zack59309"
+email = "zack59309@github.com"
+
+[project.scripts]
+fraudwatch = "fraudwatch.cli.main:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["fraudwatch*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

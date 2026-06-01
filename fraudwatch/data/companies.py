@@ -4,106 +4,11 @@
 数据基于公开年报真实值，标注了是否曾被证监会处罚/市场质疑造假。
 来源：各公司年度报告、证监会处罚公告。
 
-每家公司包含：营收、净利润、经营现金流、总资产、应收账款等关键指标，
-以及连续两个财年的数据以计算变化率。
+数据单位：所有财务指标均为**亿元**。
 """
-from dataclasses import dataclass, field, asdict
+
 from typing import Optional, Dict, List
-
-@dataclass
-class FinancialStatement:
-    """一家公司一个财年的财务数据"""
-    code: str              # 股票代码
-    year: int              # 财年
-    revenue: float         # 营业收入（亿元）
-    cogs: float            # 营业成本（亿元）
-    net_profit: float      # 净利润（亿元）
-    operating_cf: float    # 经营活动现金流净额（亿元）
-    total_assets: float    # 总资产（亿元）
-    current_assets: float  # 流动资产（亿元）
-    current_liab: float    # 流动负债（亿元）
-    total_liab: float      # 总负债（亿元）
-    accounts_recv: float   # 应收账款（亿元）
-    depreciation: float    # 折旧（亿元）
-    sgna: float            # 销售管理费用（亿元）
-    gross_ppe: float       # 固定资产原值（亿元）
-    intangibles: float     # 无形资产（亿元）
-
-    @classmethod
-    def from_dict(cls, d: dict) -> "FinancialStatement":
-        """从字典创建财务数据"""
-        return cls(
-            code=str(d.get("code", "")),
-            year=int(d.get("year", 0)),
-            revenue=float(d.get("revenue", 0)),
-            cogs=float(d.get("cogs", 0)),
-            net_profit=float(d.get("net_profit", 0)),
-            operating_cf=float(d.get("operating_cf", 0)),
-            total_assets=float(d.get("total_assets", 0)),
-            current_assets=float(d.get("current_assets", 0)),
-            current_liab=float(d.get("current_liab", 0)),
-            total_liab=float(d.get("total_liab", 0)),
-            accounts_recv=float(d.get("accounts_recv", 0)),
-            depreciation=float(d.get("depreciation", 0)),
-            sgna=float(d.get("sgna", 0)),
-            gross_ppe=float(d.get("gross_ppe", 0)),
-            intangibles=float(d.get("intangibles", 0)),
-        )
-
-    def to_dict(self) -> dict:
-        """转为字典"""
-        return asdict(self)
-
-
-@dataclass
-class CompanyProfile:
-    """公司档案"""
-    code: str
-    name: str
-    sector: str
-    flagged: bool           # 是否被质疑/处罚过
-    flag_reason: str = ""   # 造假/风险描述
-    statements: List[FinancialStatement] = field(default_factory=list)
-
-    @classmethod
-    def from_dict(cls, d: dict) -> "CompanyProfile":
-        """从字典创建公司档案。
-        支持两种格式：
-        1. statements 已组装好的列表
-        2. 扁平字段 + statement_years 列表
-        """
-        stmts = []
-        raw_stmts = d.get("statements", d.get("financials", []))
-        if raw_stmts:
-            stmts = [
-                FinancialStatement.from_dict(s) if not isinstance(s, FinancialStatement) else s
-                for s in raw_stmts
-            ]
-        else:
-            # 尝试从扁平字段构建
-            for year_field in ("year_t", "year_t_1"):
-                yr = d.get(year_field, 0)
-                if yr:
-                    stmts.append(FinancialStatement.from_dict({**d, "year": yr}))
-        return cls(
-            code=str(d.get("code", "")),
-            name=str(d.get("name", "")),
-            sector=str(d.get("sector", "")),
-            flagged=bool(d.get("flagged", False)),
-            flag_reason=str(d.get("flag_reason", "")),
-            statements=stmts,
-        )
-
-    def to_dict(self) -> dict:
-        """转为字典"""
-        return {
-            "code": self.code,
-            "name": self.name,
-            "sector": self.sector,
-            "flagged": self.flagged,
-            "flag_reason": self.flag_reason,
-            "statements": [s.to_dict() for s in self.statements],
-        }
+from ..models import FinancialStatement, CompanyProfile
 
 
 # ── 正常公司 ──────────────────────────────────────
@@ -158,7 +63,7 @@ _MIDEA = CompanyProfile(
                            4880.0, 3350.0, 2350.0, 3010.0, 325.0, 68.0, 650.0, 510.0, 290.0),
     ])
 
-_BYTEDANCE_ILLEGAL = CompanyProfile(
+_SMIC = CompanyProfile(
     code="688981", name="中芯国际", sector="半导体",
     flagged=False,
     statements=[
@@ -197,7 +102,7 @@ _KANGMEI = CompanyProfile(
     statements=[
         FinancialStatement("600518", 2017, 264.8, 182.5, 41.2, 18.5,
                            887.2, 569.4, 254.8, 457.3, 55.8, 6.8, 18.5, 85.0, 28.3),
-        FinancialStatement("600518", 2018, 283.5, 198.3, 48.3, -22.6,  # 经营现金流为负
+        FinancialStatement("600518", 2018, 283.5, 198.3, 48.3, -22.6,
                            746.2, 478.5, 326.8, 520.1, 68.9, 7.2, 21.0, 95.0, 32.0),
     ])
 
@@ -207,7 +112,7 @@ _KANGDEXIN = CompanyProfile(
     statements=[
         FinancialStatement("002450", 2017, 118.4, 75.2, 24.8, 12.3,
                            324.5, 185.3, 95.6, 185.0, 42.5, 8.5, 15.2, 65.0, 18.5),
-        FinancialStatement("002450", 2018, 91.5, 65.3, 2.8, -15.2,  # 利润崩塌、经营现金流为负
+        FinancialStatement("002450", 2018, 91.5, 65.3, 2.8, -15.2,
                            342.8, 195.2, 142.8, 242.5, 48.3, 9.0, 12.5, 72.0, 20.3),
     ])
 
@@ -221,13 +126,13 @@ _ZHANGZIDAO = CompanyProfile(
                            42.5, 28.5, 22.3, 35.6, 6.2, 2.8, 4.5, 16.0, 1.5),
     ])
 
-_LANDAI = CompanyProfile(
+_LETV = CompanyProfile(
     code="300104", name="乐视网", sector="互联网",
     flagged=True, flag_reason="虚增营收、关联交易造假、贾跃亭出走，退市",
     statements=[
         FinancialStatement("300104", 2015, 130.2, 78.5, 5.7, 8.8,
                            170.3, 98.5, 58.2, 100.5, 36.8, 3.5, 32.5, 28.0, 12.5),
-        FinancialStatement("300104", 2016, 219.5, 145.2, -2.2, -10.5,  # 利润为负、经营现金流为负
+        FinancialStatement("300104", 2016, 219.5, 145.2, -2.2, -10.5,
                            322.8, 185.0, 125.0, 195.6, 65.2, 5.8, 58.3, 35.0, 18.6),
     ])
 
@@ -237,7 +142,7 @@ _RUIHUAKANG = CompanyProfile(
     statements=[
         FinancialStatement("002250", 2017, 85.6, 52.3, 15.2, 5.8,
                            235.0, 120.5, 68.5, 110.2, 28.5, 4.2, 18.5, 45.0, 35.2),
-        FinancialStatement("002250", 2018, 92.3, 58.5, -18.5, -8.2,  # 扭盈为亏、经营现金流为负
+        FinancialStatement("002250", 2018, 92.3, 58.5, -18.5, -8.2,
                            280.5, 135.0, 105.0, 175.0, 35.2, 5.0, 22.0, 52.0, 40.0),
     ])
 
@@ -264,7 +169,7 @@ _SHENHUAKANG = CompanyProfile(
 
 # ── 灰犀牛公司（财务可疑但未被正式处罚） ─────────────
 
-_SHUIMU = CompanyProfile(
+_SHUIDIAN = CompanyProfile(
     code="300309", name="吉艾科技", sector="油服",
     flagged=True, flag_reason="连续亏损、营收暴降、应收账款异常高",
     statements=[
@@ -289,10 +194,9 @@ _HUAYI = CompanyProfile(
 
 ALL_COMPANIES: Dict[str, CompanyProfile] = {
     p.code: p for p in [
-        _MAOTAI, _WULIANGYE, _PINGAN, _CMB, _CATL, _MIDEA,
-        _BYTEDANCE_ILLEGAL, _CHANGAN,
-        _KANGMEI, _KANGDEXIN, _ZHANGZIDAO, _LANDAI, _RUIHUAKANG,
-        _YABAO, _SHENHUAKANG, _SHUIMU, _HUAYI,
+        _MAOTAI, _WULIANGYE, _PINGAN, _CMB, _CATL, _MIDEA, _SMIC, _CHANGAN,
+        _KANGMEI, _KANGDEXIN, _ZHANGZIDAO, _LETV, _RUIHUAKANG, _YABAO,
+        _SHENHUAKANG, _SHUIDIAN, _HUAYI,
     ]
 }
 
