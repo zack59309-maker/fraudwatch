@@ -29,6 +29,31 @@ class FinancialStatement:
     gross_ppe: float       # 固定资产原值（亿元）
     intangibles: float     # 无形资产（亿元）
 
+    @classmethod
+    def from_dict(cls, d: dict) -> "FinancialStatement":
+        """从字典创建财务数据"""
+        return cls(
+            code=str(d.get("code", "")),
+            year=int(d.get("year", 0)),
+            revenue=float(d.get("revenue", 0)),
+            cogs=float(d.get("cogs", 0)),
+            net_profit=float(d.get("net_profit", 0)),
+            operating_cf=float(d.get("operating_cf", 0)),
+            total_assets=float(d.get("total_assets", 0)),
+            current_assets=float(d.get("current_assets", 0)),
+            current_liab=float(d.get("current_liab", 0)),
+            total_liab=float(d.get("total_liab", 0)),
+            accounts_recv=float(d.get("accounts_recv", 0)),
+            depreciation=float(d.get("depreciation", 0)),
+            sgna=float(d.get("sgna", 0)),
+            gross_ppe=float(d.get("gross_ppe", 0)),
+            intangibles=float(d.get("intangibles", 0)),
+        )
+
+    def to_dict(self) -> dict:
+        """转为字典"""
+        return asdict(self)
+
 
 @dataclass
 class CompanyProfile:
@@ -39,6 +64,46 @@ class CompanyProfile:
     flagged: bool           # 是否被质疑/处罚过
     flag_reason: str = ""   # 造假/风险描述
     statements: List[FinancialStatement] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "CompanyProfile":
+        """从字典创建公司档案。
+        支持两种格式：
+        1. statements 已组装好的列表
+        2. 扁平字段 + statement_years 列表
+        """
+        stmts = []
+        raw_stmts = d.get("statements", d.get("financials", []))
+        if raw_stmts:
+            stmts = [
+                FinancialStatement.from_dict(s) if not isinstance(s, FinancialStatement) else s
+                for s in raw_stmts
+            ]
+        else:
+            # 尝试从扁平字段构建
+            for year_field in ("year_t", "year_t_1"):
+                yr = d.get(year_field, 0)
+                if yr:
+                    stmts.append(FinancialStatement.from_dict({**d, "year": yr}))
+        return cls(
+            code=str(d.get("code", "")),
+            name=str(d.get("name", "")),
+            sector=str(d.get("sector", "")),
+            flagged=bool(d.get("flagged", False)),
+            flag_reason=str(d.get("flag_reason", "")),
+            statements=stmts,
+        )
+
+    def to_dict(self) -> dict:
+        """转为字典"""
+        return {
+            "code": self.code,
+            "name": self.name,
+            "sector": self.sector,
+            "flagged": self.flagged,
+            "flag_reason": self.flag_reason,
+            "statements": [s.to_dict() for s in self.statements],
+        }
 
 
 # ── 正常公司 ──────────────────────────────────────
@@ -252,3 +317,128 @@ def list_flagged() -> List[CompanyProfile]:
 def list_clean() -> List[CompanyProfile]:
     """列出正常公司"""
     return [p for p in ALL_COMPANIES.values() if not p.flagged]
+
+
+# ── 外部数据导入 ──────────────────────────────────
+
+
+def load_from_csv(path: str) -> Dict[str, CompanyProfile]:
+    """
+    从 CSV 文件导入公司数据。
+
+    CSV 格式要求（每行一家公司的一个财年，同一公司需要连续两行）：
+    股票代码,公司名称,行业,财年,营收,营业成本,净利润,经营现金流,总资产,
+    流动资产,流动负债,总负债,应收账款,折旧,销售管理费,固定资产原值,无形资产,
+    是否标记,标记原因
+
+    示例行:
+    000001,平安银行,银行,2023,1500,800,350,400,50000,0,0,45000,200,15,180,300,50,,,
+    000001,平安银行,银行,2022,1400,750,320,380,46000,0,0,42000,180,14,170,280,45,,,
+    """
+    import csv
+    companies: Dict[str, CompanyProfile] = {}
+    rows: List[dict] = []
+
+    with open(path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            row = {k.strip(): v.strip() for k, v in row.items() if k}
+            rows.append(row)
+
+    # 按公司分组
+    from collections import OrderedDict
+    groups: OrderedDict[str, List[dict]] = OrderedDict()
+    for row in rows:
+        code = row.get("股票代码", row.get("code", "")).strip()
+        if not code:
+            continue
+        if code not in groups:
+            groups[code] = []
+        groups[code].append(row)
+
+    for code, group in groups.items():
+        name = group[0].get("公司名称", group[0].get("name", code))
+        sector = group[0].get("行业", group[0].get("sector", ""))
+        flagged = group[0].get("是否标记", group[0].get("flagged", "false")).lower() in ("true", "1", "是")
+        flag_reason = group[0].get("标记原因", group[0].get("flag_reason", ""))
+
+        stmts = []
+        for row in group:
+            # 中英文列名映射
+            field_map = {
+                "财年": "year", "year": "year",
+                "营收": "revenue", "营业收入": "revenue", "revenue": "revenue",
+                "营业成本": "cogs", "cogs": "cogs",
+                "净利润": "net_profit", "net_profit": "net_profit",
+                "经营现金流": "operating_cf", "operating_cf": "operating_cf",
+                "总资产": "total_assets", "total_assets": "total_assets",
+                "流动资产": "current_assets", "current_assets": "current_assets",
+                "流动负债": "current_liab", "current_liab": "current_liab",
+                "总负债": "total_liab", "total_liab": "total_liab",
+                "应收账款": "accounts_recv", "accounts_recv": "accounts_recv",
+                "折旧": "depreciation", "depreciation": "depreciation",
+                "销售管理费": "sgna", "sgna": "sgna",
+                "固定资产原值": "gross_ppe", "gross_ppe": "gross_ppe",
+                "无形资产": "intangibles", "intangibles": "intangibles",
+            }
+            mapped = {"code": code}
+            for col, val in row.items():
+                target = field_map.get(col, col)
+                mapped[target] = val
+            stmts.append(FinancialStatement.from_dict(mapped))
+
+        companies[code] = CompanyProfile(
+            code=code, name=name, sector=sector,
+            flagged=flagged, flag_reason=flag_reason,
+            statements=stmts,
+        )
+
+    return companies
+
+
+def load_from_json(path: str) -> Dict[str, CompanyProfile]:
+    """
+    从 JSON 文件导入公司数据。
+
+    JSON 格式（数组或对象）：
+    [
+        {
+            "code": "000001",
+            "name": "平安银行",
+            "sector": "银行",
+            "flagged": false,
+            "flag_reason": "",
+            "statements": [
+                {"code": "000001", "year": 2023, "revenue": 1500, ...},
+                {"code": "000001", "year": 2022, "revenue": 1400, ...}
+            ]
+        }
+    ]
+    """
+    import json
+
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    if isinstance(data, dict):
+        data = [data]
+
+    companies: Dict[str, CompanyProfile] = {}
+    for item in data:
+        cp = CompanyProfile.from_dict(item)
+        if cp.code:
+            companies[cp.code] = cp
+    return companies
+
+
+def merge_external(companies: Dict[str, CompanyProfile]) -> int:
+    """
+    将外部导入的公司合并到全局 ALL_COMPANIES 中。
+    返回新增的公司数量。
+    """
+    count = 0
+    for code, cp in companies.items():
+        if code not in ALL_COMPANIES:
+            ALL_COMPANIES[code] = cp
+            count += 1
+    return count

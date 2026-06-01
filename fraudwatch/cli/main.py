@@ -8,9 +8,10 @@ CLI 命令行入口。
   python -m fraudwatch top [N]               # 风险最高的 N 家
 """
 import sys
+import os
 import argparse
 
-from ..data.companies import get_company, list_companies, list_flagged, list_clean
+from ..data.companies import get_company, list_companies, list_flagged, list_clean, CompanyProfile
 from ..rules.engine import detect
 from ..report.formatter import format_company_report, format_csv, format_json
 
@@ -21,26 +22,29 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("command", nargs="?", default="scan",
-                        choices=["analyze", "scan", "list", "top", "help"],
-                        help="命令: analyze <代码>, scan, list, top [N]")
+                        choices=["analyze", "scan", "list", "top", "import", "help"],
+                        help="命令: analyze <代码>, scan, list, top [N], import <文件>")
     parser.add_argument("args", nargs="*", help="参数")
 
     opts = parser.parse_args()
     cmd = opts.command
     args = opts.args
 
-    if cmd == "help" or cmd not in ("analyze", "scan", "list", "top"):
+    if cmd == "help" or cmd not in ("analyze", "scan", "list", "top", "import"):
         print("FraudWatch — A股财务舞弊检测工具\n")
         print("用法:")
         print("  python -m fraudwatch analyze <股票代码>    分析单家公司")
         print("  python -m fraudwatch scan                  扫描所有公司")
         print("  python -m fraudwatch list                   列出所有公司")
         print("  python -m fraudwatch top [N]                风险最高的 N 家")
+        print("  python -m fraudwatch import <文件路径>       从 CSV/JSON 导入公司数据")
         print("\n示例:")
         print("  python -m fraudwatch analyze 600519     # 分析贵州茅台")
         print("  python -m fraudwatch analyze 600518     # 分析康美药业")
         print("  python -m fraudwatch scan               # 扫描全部 17 家公司")
         print("  python -m fraudwatch top 5              # 风险最高的 5 家")
+        print("  python -m fraudwatch import data.csv    # 从 CSV 导入外部公司")
+        print("  python -m fraudwatch import data.json   # 从 JSON 导入外部公司")
         return
 
     if cmd == "list":
@@ -53,6 +57,10 @@ def main():
 
     if cmd == "analyze":
         _cmd_analyze(args)
+        return
+
+    if cmd == "import":
+        _cmd_import(args)
         return
 
     if cmd == "scan":
@@ -79,6 +87,42 @@ def _cmd_analyze(args):
     if "--json" in args or "-j" in args:
         print("\n=== JSON ===")
         print(format_json(result))
+
+
+def _cmd_import(args):
+    if not args:
+        print("❌ 请指定文件路径")
+        print("   用法: python -m fraudwatch import <data.csv|data.json>")
+        return
+
+    path = args[0]
+    if not os.path.exists(path):
+        print(f"❌ 文件不存在: {path}")
+        return
+
+    from ..data.companies import load_from_csv, load_from_json, merge_external
+
+    ext = os.path.splitext(path)[1].lower()
+    try:
+        if ext == ".csv":
+            companies = load_from_csv(path)
+        elif ext == ".json":
+            companies = load_from_json(path)
+        else:
+            print(f"❌ 不支持的文件格式: {ext}（支持 .csv 和 .json）")
+            return
+    except Exception as e:
+        print(f"❌ 导入失败: {e}")
+        return
+
+    if not companies:
+        print("⚠️ 文件中没有有效公司数据")
+        return
+
+    n = merge_external(companies)
+    print(f"✅ 成功导入 {len(companies)} 家公司（新增 {n} 家）")
+    print(f"   现在共有 {len(list_companies())} 家公司在数据库")
+    print(f"   用 `python -m fraudwatch analyze <代码>` 分析新导入的公司")
 
 
 def _cmd_scan():

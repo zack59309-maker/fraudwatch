@@ -1,0 +1,13 @@
+[
+  {
+    "code": "000002",
+    "name": "测试暴雷公司",
+    "sector": "制造业",
+    "flagged": true,
+    "flag_reason": "虚构营收案例，仅用于测试导入功能",
+    "statements": [
+      {"code": "000002", "year": 2022, "revenue": 50.0, "cogs": 35.0, "net_profit": 5.0, "operating_cf": -2.0, "total_assets": 100.0, "current_assets": 60.0, "current_liab": 40.0, "total_liab": 70.0, "accounts_recv": 25.0, "depreciation": 3.0, "sgna": 8.0, "gross_ppe": 30.0, "intangibles": 10.0},
+      {"code": "000002", "year": 2023, "revenue": 70.0, "cogs": 50.0, "net_profit": 6.0, "operating_cf": -5.0, "total_assets": 120.0, "current_assets": 70.0, "current_liab": 50.0, "total_liab": 85.0, "accounts_recv": 35.0, "depreciation": 3.5, "sgna": 10.0, "gross_ppe": 32.0, "intangibles": 12.0}
+    ]
+  }
+]
