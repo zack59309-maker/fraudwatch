@@ -6,6 +6,8 @@ CLI 命令行入口。
   python -m fraudwatch scan                  # 扫描所有公司
   python -m fraudwatch list                  # 列出所有公司
   python -m fraudwatch top [N]               # 风险最高的 N 家
+  python -m fraudwatch fetch <代码/名称>      # 从东方财富抓取并分析真实 A 股公司
+  python -m fraudwatch import <文件路径>      # 从 CSV/JSON 导入公司数据
 """
 import sys
 import os
@@ -22,27 +24,30 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("command", nargs="?", default="scan",
-                        choices=["analyze", "scan", "list", "top", "import", "help"],
-                        help="命令: analyze <代码>, scan, list, top [N], import <文件>")
+                        choices=["analyze", "scan", "list", "top", "import", "fetch", "help"],
+                        help="命令: analyze <代码>, scan, list, top [N], import <文件>, fetch <代码/名称>")
     parser.add_argument("args", nargs="*", help="参数")
 
     opts = parser.parse_args()
     cmd = opts.command
     args = opts.args
 
-    if cmd == "help" or cmd not in ("analyze", "scan", "list", "top", "import"):
+    if cmd == "help" or cmd not in ("analyze", "scan", "list", "top", "import", "fetch"):
         print("FraudWatch — A股财务舞弊检测工具\n")
         print("用法:")
         print("  python -m fraudwatch analyze <股票代码>    分析单家公司")
         print("  python -m fraudwatch scan                  扫描所有公司")
         print("  python -m fraudwatch list                   列出所有公司")
         print("  python -m fraudwatch top [N]                风险最高的 N 家")
+        print("  python -m fraudwatch fetch <代码/名称>       从东方财富抓取并分析真实 A 股公司")
         print("  python -m fraudwatch import <文件路径>       从 CSV/JSON 导入公司数据")
         print("\n示例:")
         print("  python -m fraudwatch analyze 600519     # 分析贵州茅台")
         print("  python -m fraudwatch analyze 600518     # 分析康美药业")
         print("  python -m fraudwatch scan               # 扫描全部 17 家公司")
         print("  python -m fraudwatch top 5              # 风险最高的 5 家")
+        print("  python -m fraudwatch fetch 600519       # 抓取并分析贵州茅台")
+        print("  python -m fraudwatch fetch 茅台         # 按名称搜索并分析")
         print("  python -m fraudwatch import data.csv    # 从 CSV 导入外部公司")
         print("  python -m fraudwatch import data.json   # 从 JSON 导入外部公司")
         return
@@ -57,6 +62,10 @@ def main():
 
     if cmd == "analyze":
         _cmd_analyze(args)
+        return
+
+    if cmd == "fetch":
+        _cmd_fetch(args)
         return
 
     if cmd == "import":
@@ -193,3 +202,59 @@ def _cmd_top(args):
               f"{r['signal_count']:<4d}")
 
     print(f"{'='*70}")
+
+
+# ── fetch 命令 ──────────────────────────────────────
+
+def _cmd_fetch(args):
+    """从东方财富抓取真实 A 股公司数据并检测"""
+    if not args:
+        print("❌ 请指定股票代码或名称，如:")
+        print("   python -m fraudwatch fetch 600519")
+        print("   python -m fraudwatch fetch 茅台")
+        print("   python -m fraudwatch fetch 宁德时代")
+        return
+
+    from ..data.fetcher import search_stock, fetch_financial_data
+    from ..rules.engine import detect
+    from ..report.formatter import format_company_report
+
+    query = " ".join(args)
+    print(f"🔍 正在搜索: {query} ...")
+
+    # 先搜索
+    results = search_stock(query)
+    if not results:
+        print(f"❌ 未找到股票: {query}")
+        return
+
+    # 如果搜到多个，让用户选第一个
+    if len(results) > 1:
+        print(f"⚠️  找到多个匹配，使用第一个:")
+        for r in results:
+            print(f"   {r['code']} - {r['name']}")
+        print()
+
+    target = results[0]
+    code = target["code"]
+
+    print(f"📥 正在抓取 {target['name']}({code}) 的财务数据...")
+    import time
+    start = time.time()
+
+    profile = fetch_financial_data(code)
+
+    elapsed = time.time() - start
+    if profile is None:
+        print(f"❌ 抓取失败，请检查股票代码是否正确")
+        return
+
+    print(f"✅ 抓取完成 ({elapsed:.1f}s)，共 {len(profile.statements)} 个财年数据")
+    print()
+
+    # 运行检测
+    result = detect(profile)
+    print(format_company_report(result))
+
+    # 提示导出
+    print(f"提示: 用 --json 或 -j 可输出 JSON 格式")

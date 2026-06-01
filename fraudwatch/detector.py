@@ -5,15 +5,23 @@ FraudDetector — 主要接口类。
     from fraudwatch import FraudDetector
 
     detector = FraudDetector()
+
+    # 分析内置数据
     result = detector.analyze("600519")
     result = detector.analyze("600518")  # 康美药业
 
-    results = detector.scan()  # 扫描所有公司
+    # 自动从网络抓取真实 A 股数据
+    result = detector.fetch_and_analyze("600519")
+    result = detector.fetch_and_analyze("茅台")
+    result = detector.fetch_and_analyze("宁德时代")
+
+    # 扫描所有内置公司
+    results = detector.scan()
 
     # 外部导入
     detector.load_csv("my_companies.csv")
     detector.load_json("my_companies.json")
-    result = detector.analyze("000001")  # 分析外部导入的公司
+    result = detector.analyze("000001")
 """
 from typing import Optional, List, Dict, Union
 
@@ -21,6 +29,7 @@ from .data.companies import (
     get_company, list_companies, list_flagged, list_clean,
     load_from_csv, load_from_json, merge_external, CompanyProfile,
 )
+from .data.fetcher import search_stock, fetch_financial_data
 from .rules.engine import detect
 from .report.formatter import format_company_report, format_csv, format_json
 
@@ -39,6 +48,31 @@ class FraudDetector:
         if not profile:
             return None
         return detect(profile)
+
+    def fetch_and_analyze(self, query: str) -> Optional[dict]:
+        """
+        从网络抓取并分析 A 股公司。
+        支持股票代码或名称（如 "600519" 或 "茅台"）。
+        """
+        # 先尝试当成代码直接抓取
+        profile = fetch_financial_data(query)
+        if profile is not None:
+            return detect(profile)
+
+        # 失败了，按名称搜索
+        results = search_stock(query)
+        if not results:
+            return None
+
+        # 用第一个结果尝试抓取
+        code = results[0]["code"]
+        profile = fetch_financial_data(code)
+        if profile is None:
+            return None
+
+        result = detect(profile)
+        result["_fetched_name"] = results[0]["name"]
+        return result
 
     def scan(self) -> List[dict]:
         """扫描所有公司（内置 + 已导入的外部数据）"""
